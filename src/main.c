@@ -1,93 +1,103 @@
+#include <SDL2/SDL.h>
 #include <stdio.h>
 #include <math.h>
 
 #define WIDTH 800
 #define HEIGHT 600
+#define BALL_RADIUS 50
+#define BALL_SPEED 5
 
 typedef struct {
-    float x, y, z;
-} Vector3;
+    float x, y;
+} Vector2;
 
 typedef struct {
-    Vector3 origin;
-    Vector3 direction;
+    Vector2 start;
+    Vector2 end;
 } Ray;
 
-typedef struct {
-    Vector3 center;
-    float radius;
-} Sphere;
-
-typedef struct {
-    Vector3 position;
-    Vector3 color;
-    float intensity;
-} Light;
-
-Vector3 vector_add(Vector3 a, Vector3 b) {
-    return (Vector3){a.x + b.x, a.y + b.y, a.z + b.z};
-}
-
-Vector3 vector_sub(Vector3 a, Vector3 b) {
-    return (Vector3){a.x - b.x, a.y - b.y, a.z - b.z};
-}
-
-Vector3 vector_scale(Vector3 v, float s) {
-    return (Vector3){v.x * s, v.y * s, v.z * s};
-}
-
-float vector_dot(Vector3 a, Vector3 b) {
-    return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
-Vector3 vector_normalize(Vector3 v) {
-    float len = sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-    return (Vector3){v.x / len, v.y / len, v.z / len};
-}
-
-int intersect_ray_sphere(Ray ray, Sphere sphere, float *t) {
-    Vector3 oc = vector_sub(ray.origin, sphere.center);
-    float a = vector_dot(ray.direction, ray.direction);
-    float b = 2.0f * vector_dot(oc, ray.direction);
-    float c = vector_dot(oc, oc) - sphere.radius * sphere.radius;
-    float discriminant = b * b - 4 * a * c;
-    if (discriminant < 0) {
-        return 0;
-    } else {
-        *t = (-b - sqrt(discriminant)) / (2.0f * a);
-        return 1;
-    }
-}
-
-Vector3 trace_ray(Ray ray, Sphere sphere, Light light) {
-    float t;
-    if (intersect_ray_sphere(ray, sphere, &t)) {
-        Vector3 hit_point = vector_add(ray.origin, vector_scale(ray.direction, t));
-        Vector3 normal = vector_normalize(vector_sub(hit_point, sphere.center));
-        Vector3 light_dir = vector_normalize(vector_sub(light.position, hit_point));
-        float diff = fmax(0.0f, vector_dot(normal, light_dir)) * light.intensity;
-        return vector_scale(light.color, diff);
-    }
-    return (Vector3){0, 0, 0}; // Background color
-}
-
-int main() {
-    FILE *image = fopen("image.ppm", "w");
-    fprintf(image, "P3\n%d %d\n255\n", WIDTH, HEIGHT);
-
-    Sphere sphere = {{0, 0, -5}, 1};
-    Light light = {{5, 5, -5}, {1, 1, 1}, 1.0f};
-
-    for (int y = 0; y < HEIGHT; ++y) {
-        for (int x = 0; x < WIDTH; ++x) {
-            float u = (2.0f * x / WIDTH - 1.0f) * (float)WIDTH / HEIGHT;
-            float v = 1.0f - 2.0f * y / HEIGHT;
-            Ray ray = {{0, 0, 0}, vector_normalize((Vector3){u, v, -1})};
-            Vector3 color = trace_ray(ray, sphere, light);
-            fprintf(image, "%d %d %d ", (int)(color.x * 255), (int)(color.y * 255), (int)(color.z * 255));
+void draw_circle(SDL_Renderer *renderer, int x, int y, int radius) {
+    for (int w = 0; w < radius * 2; w++) {
+        for (int h = 0; h < radius * 2; h++) {
+            int dx = radius - w; // horizontal offset
+            int dy = radius - h; // vertical offset
+            if ((dx * dx + dy * dy) <= (radius * radius)) {
+                SDL_RenderDrawPoint(renderer, x + dx, y + dy);
+            }
         }
     }
+}
 
-    fclose(image);
+void draw_ray(SDL_Renderer *renderer, Ray ray) {
+    SDL_RenderDrawLine(renderer, ray.start.x, ray.start.y, ray.end.x, ray.end.y);
+}
+
+int main(int argc, char* args[]) {
+    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+        printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
+        return 1;
+    }
+
+    SDL_Window* window = SDL_CreateWindow("Interactive Ray Tracing", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WIDTH, HEIGHT, SDL_WINDOW_SHOWN);
+    if (window == NULL) {
+        printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
+        return 1;
+    }
+
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    if (renderer == NULL) {
+        printf("Renderer could not be created! SDL_Error: %s\n", SDL_GetError());
+        return 1;
+    }
+
+    Vector2 ball_pos = {WIDTH / 2, HEIGHT / 2};
+
+    int quit = 0;
+    SDL_Event e;
+
+    while (!quit) {
+        while (SDL_PollEvent(&e) != 0) {
+            if (e.type == SDL_QUIT) {
+                quit = 1;
+            } else if (e.type == SDL_KEYDOWN) {
+                switch (e.key.keysym.sym) {
+                    case SDLK_UP:
+                        ball_pos.y -= BALL_SPEED;
+                        break;
+                    case SDLK_DOWN:
+                        ball_pos.y += BALL_SPEED;
+                        break;
+                    case SDLK_LEFT:
+                        ball_pos.x -= BALL_SPEED;
+                        break;
+                    case SDLK_RIGHT:
+                        ball_pos.x += BALL_SPEED;
+                        break;
+                }
+            }
+        }
+
+        SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
+        SDL_RenderClear(renderer);
+
+        SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+        draw_circle(renderer, ball_pos.x, ball_pos.y, BALL_RADIUS);
+
+        // Draw rays from the ball to the edges of the screen
+        for (int angle = 0; angle < 360; angle += 10) {
+            Ray ray;
+            ray.start = ball_pos;
+            ray.end.x = ball_pos.x + cos(angle * M_PI / 180) * WIDTH;
+            ray.end.y = ball_pos.y + sin(angle * M_PI / 180) * HEIGHT;
+            draw_ray(renderer, ray);
+        }
+
+        SDL_RenderPresent(renderer);
+    }
+
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+
     return 0;
 }
