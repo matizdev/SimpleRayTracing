@@ -1,1 +1,1 @@
-# SimpleRayTracing
+# Simple Ray Tracing
